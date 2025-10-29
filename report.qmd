@@ -1,36 +1,46 @@
 ---
 title: "EV Power - Lab 4 Project Report"
-format: typst
+author: "Brian Choi"
+format: html
 ---
 
 # Example Solution 1
 
-## **Part 0: libraries**
+## **Part 0: libraries** 
 
 ```{r}
+#| message: false
+#| warning: false
+
 library(tidyverse)
 library(stringr)
 library(kableExtra)
+library(leaflet)
+library(usmap)
+library(sf)
 ```
 
 ## **Part 1:** **Defining Research Question**
 
-Chosen Question: What is the average growth in renewable energy growth per state when compared to the average growth in total energy use (2021-2023).
+Chosen Question: 
+* What is the average growth in renewable energy and non-renewable energy across different states and energy sources from 2023-2021? 
+* Which states led the highest growth in either categories? 
+* What energy sources had the largest change in usage from 2021-2023?
 
 ## **Part 2: Data Preparation and Cleaning**
 
 ```{r}
 ## import all data
-avg_price = read_csv("data/av-energy-price-2021-2023.csv")
-ev_registration = read_csv("data/ev-registrations-by-state-2023.csv")
+avg_price = read_csv("data/av-energy-price-2021-2023.csv", show_col_types = FALSE)
+ev_registration = read_csv("data/ev-registrations-by-state-2023.csv", show_col_types = FALSE)
 
-renew_use_2021 = read_csv("data/renew-use-2021.csv")
-renew_use_2022 = read_csv("data/renew-use-2022.csv")
-renew_use_2023 = read_csv("data/renew-use-2023.csv")
+renew_use_2021 = read_csv("data/renew-use-2021.csv", show_col_types = FALSE)
+renew_use_2022 = read_csv("data/renew-use-2022.csv", show_col_types = FALSE)
+renew_use_2023 = read_csv("data/renew-use-2023.csv", show_col_types = FALSE)
 
-total_use_2021 = read_csv("data/total-use-2021.csv")
-total_use_2022 = read_csv("data/total-use-2022.csv")
-total_use_2023 = read_csv("data/total-use-2023.csv")
+total_use_2021 = read_csv("data/total-use-2021.csv", show_col_types = FALSE)
+total_use_2022 = read_csv("data/total-use-2022.csv", show_col_types = FALSE)
+total_use_2023 = read_csv("data/total-use-2023.csv", show_col_types = FALSE)
 
 ```
 
@@ -99,7 +109,7 @@ avg_price = extract_digit(avg_price, "2022" , "\\d+")
 avg_price = extract_digit(avg_price, "2023" , "\\d+")
 ```
 
-
+* In this section, I renamed all the energy sources so that they are standarized across the renewable energy usage tables and the total energy usage tables. From there, I extracted the data values from avg_price and then organized it into a table. I also extracted numerical values where it was necessary.
 
 ## **Part 3: Joining / Pivoting Datasets for Analysis**
 
@@ -167,7 +177,7 @@ renew_growth = renew_energy_use |>
         mutate(
         Average_Growth = ((Renewable_Use_2023 - Renewable_Use_2021) / Renewable_Use_2021) * 100
     )|>
-    select("State","Energy_Source","Average_Growth") 
+    select("State","Energy_Source","Average_Growth")
 
 total_growth = total_energy_use |>
     ## remove the total renewable energy rows for future computatio
@@ -175,7 +185,7 @@ total_growth = total_energy_use |>
     mutate(
         Average_Growth = ((Energy_Use_2023 - Energy_Use_2021) / Energy_Use_2021) * 100
     ) |>
-    select("State","Energy_Source", "Average_Growth")
+    select("State","Energy_Source", "Average_Growth") 
 
  
 summary_function = function(df, group, summary_name, user_func){
@@ -188,25 +198,129 @@ summary_function = function(df, group, summary_name, user_func){
 }
 
 
-total_growth_state = summary_function(total_growth, State, "Total Growth", "sum")
-total_growth_source = summary_function(total_growth, Energy_Source, "Total Growth", "sum")
+total_growth_state = summary_function(total_growth, State, "Total Growth (%)", "sum")
+total_growth_source = summary_function(total_growth, Energy_Source, "Total Growth (%)", "sum")
 
-renew_growth_state = summary_function(renew_growth, State, "Total Growth", "sum")
-renew_growth_source = summary_function(renew_growth, Energy_Source, "Total Growth", "sum")
+renew_growth_state = summary_function(renew_growth, State, "Total Growth (%)", "sum")
+renew_growth_source = summary_function(renew_growth, Energy_Source, "Total Growth (%)", "sum")
 ```
 
+* Here I was focused on combining the renewable energy usage and total energy usage from 2021-2023 into usable data frame. First, I pivoted the data frames so that States became a column. Then I combined them based on energy type, making sure to specify the columns by what year they represented. From there, I created a growth data frame that calculated the average growth per State / Energy Source combination. Finally, that allowed me to group by State and Energy Soure to figure out the energy growths per category from 2021-2023. 
 
-## **Part 4: Mapping Visualization**
+## **Part 4: Summary Tables and Mapping Visualization**
 
+* Below are the tables that I have created:
+
+Table 1: Growth in Non-Renewable Energy Usage by Source (2021-2023)
 ```{r}
-# print table of Total Growth over Energy Sources
 kable(total_growth_source, caption = "Growth in Non-Renewable Energy Usage by Source (2021-2023)")
+```
+
+Table 2: Growth in Renewable Energy Usage by Source (2021-2023)
+```{r}
 kable(renew_growth_source, caption = "Growth in Renewable Energy Usage by Source (2021-2023)")
 ```
 
-
+Table 3: Growth in Non-Renewable Energy Usage by State (2021-2023)
 ```{r}
-# print table of total Growth over States
 kable(total_growth_state, caption = "Growth in Non-Renewable Energy Usage by State (2021-2023)")
+```
+
+Table 4: Growth in Renewable Energy Usage by State (2021-2023)
+```{r}
 kable(renew_growth_state, caption = "Growth in Renewable Energy Usage by State (2021-2023)")
 ```
+
+```{r}
+# grab centeroid per state
+state_polys = us_map("states")
+
+# convert the centroid values to an sf object (something called a CRS system)
+state_sf = st_as_sf(state_polys)
+
+# compute centroids of each state's polygon
+state_centroids <- state_sf |>
+  st_centroid() |> # transforms into point from polygons
+  st_transform(crs = 4326) |> #transform the CRS values into Long and Lat
+  mutate( #grab long and lat
+    lon = st_coordinates(geom)[,1],
+    lat = st_coordinates(geom)[,2]
+  ) |>
+  st_drop_geometry() |> # drops the original CRS column
+  select(abbr, lon, lat) |>
+  rename(State = abbr)
+
+# at this stage, state_centroids is a data frame with state name lon and lat
+
+# Merge with renewable energy growth table
+renew_growth_map = left_join(renew_growth_state, state_centroids, by = "State")
+
+# add color and size column
+renew_growth_map = renew_growth_map |>
+  mutate(
+    color = ifelse(`Total Growth (%)` >= 0, "blue", "red"),
+    radius = abs(`Total Growth (%)`) * 500  # 500 seems the most visible
+  )
+
+# create leaflet map
+leaflet(renew_growth_map) |>
+  addProviderTiles("CartoDB.Positron") |> #cartoDB.Positron is just like the background map we use as base
+  addCircles(
+    lng = ~lon,
+    lat = ~lat,
+    radius = ~radius,
+    color = ~color,
+    fillColor = ~color,
+    fillOpacity = 0.6,
+    popup = ~paste0(
+      "<b>", State, "</b><br>",
+      "Growth: ", round(`Total Growth (%)`, 2), "%"
+    ) # add pop up for when you hover above the circle
+  ) |>
+  addLegend(
+    position = "bottomright",
+    colors = c("blue", "red"),
+    labels = c("Positive Growth", "Negative Growth"),
+    title = "Renewable Energy Growth (2021–2023)"
+  )
+
+# merge with non-renewable energy growth table
+total_growth_map = left_join(total_growth_state, state_centroids, by = "State") |>
+     mutate(
+        color = ifelse(`Total Growth (%)` >= 0, "blue", "red"),
+        radius = abs(`Total Growth (%)`) * 1000  # adjust to 1000 since different scales
+    )
+
+# create leaflet map
+leaflet(total_growth_map) |>
+  addProviderTiles("CartoDB.Positron") |> #cartoDB.Positron is just like the background map we use as base
+  addCircles(
+    lng = ~lon,
+    lat = ~lat,
+    radius = ~radius,
+    color = ~color,
+    fillColor = ~color,
+    fillOpacity = 0.6,
+    popup = ~paste0(
+      "<b>", State, "</b><br>",
+      "Growth: ", round(`Total Growth (%)`, 2), "%"
+    ) # add pop up for when you hover above the circle
+  ) |>
+  addLegend(
+    position = "bottomright",
+    colors = c("blue", "red"),
+    labels = c("Positive Growth", "Negative Growth"),
+    title = "Non-Renewable Energy Growth (2021–2023)"
+  )
+```
+
+
+## **Part 5: Analysis**
+
+* Overall, we can see that the nationwide trend has been to increase Renewable Energy Usage while decreasing Non-Renewable Usage. 
+* Furthermore, when looking at the growths by Sourced, we can see that the greatest decrease in usage was coal at -1360% while the greatest increase in usage was Solar Energy at 4382%.
+* The state with the greatest increase in Renewable Energy Usage was South Dakota at 819.86%.
+* The state with the greatest increase in Non-Renewable Energy Usage was Montana at 94.85%.
+* The state with the greatest decrease in Non-Renewable Energy Usage was Connecticut at -117.68%.
+
+* We can see that the Map helps out a lot visually with our main questions when it comes to state groupings. It's easy to see the states with the largest growth and with the color coding which highlights negative growth, it's easy to tell the trend of growth between Renewable Energy Growth and Non-Renewable Energy Growth
