@@ -10,27 +10,203 @@ format: typst
 ```{r}
 library(tidyverse)
 library(stringr)
-
+library(kableExtra)
 ```
 
 ## **Part 1:** **Defining Research Question**
 
-Chosen Question:
+Chosen Question: What is the average growth in renewable energy growth per state when compared to the average growth in total energy use (2021-2023).
 
 ## **Part 2: Data Preparation and Cleaning**
 
 ```{r}
+## import all data
+avg_price = read_csv("data/av-energy-price-2021-2023.csv")
+ev_registration = read_csv("data/ev-registrations-by-state-2023.csv")
+
+renew_use_2021 = read_csv("data/renew-use-2021.csv")
+renew_use_2022 = read_csv("data/renew-use-2022.csv")
+renew_use_2023 = read_csv("data/renew-use-2023.csv")
+
+total_use_2021 = read_csv("data/total-use-2021.csv")
+total_use_2022 = read_csv("data/total-use-2022.csv")
+total_use_2023 = read_csv("data/total-use-2023.csv")
 
 ```
+
+
+```{r}
+# rename function
+energy_source_rename = function(df){
+    source = c('Coal','Natural Gas','Petroleum','Nuclear Energy','Total Renewable Energy')
+    df['Energy_Source'] = source
+    return(df)
+}
+
+# standardize name for all three dfs
+total_use_2021 = energy_source_rename(total_use_2021)
+total_use_2022 = energy_source_rename(total_use_2022)
+total_use_2023 = energy_source_rename(total_use_2023)
+```
+
+```{r}
+# extract digit function
+extract_digit = function(df, column, pattern){
+    df = df|>
+        mutate(
+            ## syntax for dynamically creating a new column
+            !!{{column}} := str_extract(df[[{{column}}]], pattern)
+        )
+    return(df)
+}
+
+renew_use_2021 = extract_digit(renew_use_2021, "Renewable_Use_2021" , "\\d+")
+renew_use_2022 = extract_digit(renew_use_2022, "Renewable_Use_2022" , "\\d+")
+renew_use_2023 = extract_digit(renew_use_2023, "Renewable_Use_2023" , "\\d+")
+
+#notice renew_use_2023 has some state names that are lower case
+renew_use_2023$State = toupper(renew_use_2023$State)
+
+#convert the usage into numeric values
+renew_use_2021$Renewable_Use_2021 = as.numeric(renew_use_2021$Renewable_Use_2021)
+renew_use_2022$Renewable_Use_2022 = as.numeric(renew_use_2022$Renewable_Use_2022)
+renew_use_2023$Renewable_Use_2023 = as.numeric(renew_use_2023$Renewable_Use_2023)
+
+
+## fix registration column name
+colnames(ev_registration) = c('State','EV_Count')
+ev_registration = slice(ev_registration, c(3:nrow(ev_registration)))
+ev_registration = extract_digit(ev_registration, "EV_Count", "\\d+")
+
+```
+
+```{r}
+## make column name easier to reference / slice only necessary rows
+colnames(avg_price) = "x"
+avg_price = slice(avg_price, c(3:nrow(avg_price)))
+
+## split up by comma
+avg_price = avg_price|>
+    separate(
+        x,
+        into = c('State','2021','2022','2023'),
+        sep = ','
+    )
+
+## extract digits only
+avg_price = extract_digit(avg_price, "2021" , "\\d+")
+avg_price = extract_digit(avg_price, "2022" , "\\d+")
+avg_price = extract_digit(avg_price, "2023" , "\\d+")
+```
+
+
 
 ## **Part 3: Joining / Pivoting Datasets for Analysis**
 
 ```{r}
+## pivot the total use data frames
+total_use_2021 = total_use_2021|>
+    pivot_longer(
+        cols = -Energy_Source,
+        names_to = 'State',
+        values_to = 'Energy_Use'
+    )|>
+    select("State", everything())
 
+total_use_2022 = total_use_2022|>
+    pivot_longer(
+        cols = -Energy_Source,
+        names_to = 'State',
+        values_to = 'Energy_Use'
+    )|>
+    select("State", everything())
+
+total_use_2023 = total_use_2023|>
+    pivot_longer(
+        cols = -Energy_Source,
+        names_to = 'State',
+        values_to = 'Energy_Use'
+    )|>
+    select("State", everything())
 ```
+
+```{r}
+## join total use data frames and renew use data frames
+
+total_energy_use = total_use_2021 |>
+    left_join(
+        total_use_2022,
+        by = c('State', 'Energy_Source'),
+        suffix = c('','_2022')
+    ) |>
+    left_join(
+        total_use_2023,
+        by = c('State','Energy_Source'),
+        suffix = c('','_2023')
+    ) |>
+    rename(
+        'Energy_Use_2021' = Energy_Use
+    )
+
+renew_energy_use = renew_use_2021 |>
+    left_join(
+        renew_use_2022,
+        by = c('State', 'Energy_Source')
+    ) |>
+    left_join(
+        renew_use_2023,
+        by = c('State','Energy_Source')
+    )
+```
+
+
+```{r}
+## create growth tables
+## find average growth rate per state per category from 2023-2021
+renew_growth = renew_energy_use |>
+        mutate(
+        Average_Growth = ((Renewable_Use_2023 - Renewable_Use_2021) / Renewable_Use_2021) * 100
+    )|>
+    select("State","Energy_Source","Average_Growth") 
+
+total_growth = total_energy_use |>
+    ## remove the total renewable energy rows for future computatio
+    filter(Energy_Source != 'Total Renewable Energy') |>
+    mutate(
+        Average_Growth = ((Energy_Use_2023 - Energy_Use_2021) / Energy_Use_2021) * 100
+    ) |>
+    select("State","Energy_Source", "Average_Growth")
+
+ 
+summary_function = function(df, group, summary_name, user_func){
+    f = match.fun(user_func)
+    df|>
+        group_by({{group}})|>
+        summarise(
+            !!{{summary_name}} := f(Average_Growth, na.rm = T)
+        )
+}
+
+
+total_growth_state = summary_function(total_growth, State, "Total Growth", "sum")
+total_growth_source = summary_function(total_growth, Energy_Source, "Total Growth", "sum")
+
+renew_growth_state = summary_function(renew_growth, State, "Total Growth", "sum")
+renew_growth_source = summary_function(renew_growth, Energy_Source, "Total Growth", "sum")
+```
+
 
 ## **Part 4: Mapping Visualization**
 
 ```{r}
+# print table of Total Growth over Energy Sources
+kable(total_growth_source, caption = "Growth in Non-Renewable Energy Usage by Source (2021-2023)")
+kable(renew_growth_source, caption = "Growth in Renewable Energy Usage by Source (2021-2023)")
+```
 
+
+```{r}
+# print table of total Growth over States
+kable(total_growth_state, caption = "Growth in Non-Renewable Energy Usage by State (2021-2023)")
+kable(renew_growth_state, caption = "Growth in Renewable Energy Usage by State (2021-2023)")
 ```
