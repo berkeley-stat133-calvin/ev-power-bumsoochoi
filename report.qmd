@@ -1,7 +1,7 @@
 ---
 title: "EV Power - Lab 4 Project Report"
 author: "Brian Choi"
-format: html
+format: typst
 ---
 
 # Example Solution 1
@@ -18,6 +18,7 @@ library(kableExtra)
 library(leaflet)
 library(usmap)
 library(sf)
+library(webshot)
 ```
 
 ## **Part 1:** **Defining Research Question**
@@ -231,7 +232,7 @@ Table 4: Growth in Renewable Energy Usage by State (2021-2023)
 kable(renew_growth_state, caption = "Growth in Renewable Energy Usage by State (2021-2023)")
 ```
 
-```{r}
+```{r, eval = F}
 # grab centeroid per state
 state_polys = us_map("states")
 
@@ -263,7 +264,7 @@ renew_growth_map = renew_growth_map |>
   )
 
 # create leaflet map
-leaflet(renew_growth_map) |>
+renew_map = leaflet(renew_growth_map) |>
   addProviderTiles("CartoDB.Positron") |> #cartoDB.Positron is just like the background map we use as base
   addCircles(
     lng = ~lon,
@@ -284,6 +285,9 @@ leaflet(renew_growth_map) |>
     title = "Renewable Energy Growth (2021–2023)"
   )
 
+# save the map into a png file
+# mapshot(renew_map, file = "renewable_energy_growth_map.png")
+
 # merge with non-renewable energy growth table
 total_growth_map = left_join(total_growth_state, state_centroids, by = "State") |>
      mutate(
@@ -292,7 +296,7 @@ total_growth_map = left_join(total_growth_state, state_centroids, by = "State") 
     )
 
 # create leaflet map
-leaflet(total_growth_map) |>
+non_renew_map = leaflet(total_growth_map) |>
   addProviderTiles("CartoDB.Positron") |> #cartoDB.Positron is just like the background map we use as base
   addCircles(
     lng = ~lon,
@@ -312,8 +316,14 @@ leaflet(total_growth_map) |>
     labels = c("Positive Growth", "Negative Growth"),
     title = "Non-Renewable Energy Growth (2021–2023)"
   )
+
+# save map to png file
+# mapshot(non_renew_map, file = 'nonrenewable_energy_growth_map.png')
+
 ```
 
+![](renewable_energy_growth_map.png)
+![](nonrenewable_energy_growth_map.png)
 
 ## **Part 5: Analysis**
 
