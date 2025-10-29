@@ -11,5 +11,3 @@ The project.qmd file with your project instructions.
 The report.qmd for your data cleaning and mapping products.
 
 The optional ev-dashboard.qmd file for you to create a quarto dashboard.
-
---> HTML: file:///Users/brianchoi/Documents/S25_26/STA133/Git_Work/ev-power-bumsoochoi/report.html
